@@ -1,6 +1,6 @@
 # SzenzorKozpont server — installation
 
-Self-hosted IoT cloud (PHP + nginx). Design background: `DESIGN.md`.
+Self-hosted IoT cloud (PHP + nginx).
 
 ## Requirements
 
@@ -10,7 +10,7 @@ Self-hosted IoT cloud (PHP + nginx). Design background: `DESIGN.md`.
 
 ## 1. Files
 
-Copy the **contents** of `srv/` into the webroot (`index.php` must end up at the root).
+Copy the **contents** into the webroot (`index.php` must end up at the root).
 
 ## 2. Configuration
 
