@@ -54,7 +54,8 @@ if (($seg[0] ?? '') === 'api') {
         json_out(['ok' => false, 'err' => 'method'], 405);
     }
     // Global encoded size cap before decode (anti gzip-bomb).
-    if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 2 * 1024 * 1024) {
+    // (raw_body_pair re-enforces it on read, incl. missing length.)
+    if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > ENCODED_MAX) {
         json_out(['ok' => false, 'err' => 'too large'], 413);
     }
     // Auth before body parse: key is header-only, so bad keys fail

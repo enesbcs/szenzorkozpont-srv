@@ -33,6 +33,9 @@ function json_err(string $msg, int $code = 400): void
 /** Decoded request body cap: covers MAX_CONFIG_BODY (512 KiB) + headroom. */
 const DECODED_MAX = 1048576;
 
+/** Encoded request body cap (as received, gzip included). */
+const ENCODED_MAX = 2097152;
+
 /** [encoded, decoded] request body pair, read once. Oversize decoded exits 413. */
 function raw_body_pair(): array
 {
@@ -40,7 +43,16 @@ function raw_body_pair(): array
     if ($pair !== null) {
         return $pair;
     }
-    $raw = (string)file_get_contents('php://input');
+    // Pre-read gate: declared length checked before any read (all callers).
+    if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > ENCODED_MAX) {
+        json_err('too large', 413);
+    }
+    // Bounded read: +1 byte proves overflow even with missing/lying
+    // length (e.g. chunked encoding) — never hold more than cap+1.
+    $raw = (string)file_get_contents('php://input', false, null, 0, ENCODED_MAX + 1);
+    if (strlen($raw) > ENCODED_MAX) {
+        json_err('too large', 413);
+    }
     $dec = $raw;
     $enc = $_SERVER['HTTP_CONTENT_ENCODING'] ?? '';
     if (stripos($enc, 'gzip') !== false && $raw !== '') {

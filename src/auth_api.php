@@ -129,12 +129,12 @@ function user_token_verify(string $token): ?array
 function rate_limit(string $k, int $max, int $window): void
 {
     $now = now_ts();
-    // Expired-row purge thinned: queries ignore stale rows anyway,
-    // job_cleanup purges them; ~2% of calls sweep.
+    // Expired-row purge thinned: the COUNT below enforces the window
+    // itself; purge only frees disk (job_cleanup purges too).
     if (rand(1, 50) === 1) {
         q('DELETE FROM rate_hits WHERE ts<?', [$now - $window]);
     }
-    $r = q1('SELECT COUNT(*) c FROM rate_hits WHERE k=?', [$k]);
+    $r = q1('SELECT COUNT(*) c FROM rate_hits WHERE k=? AND ts>=?', [$k, $now - $window]);
     if (((int)($r['c'] ?? 0)) >= $max) {
         json_out(['ok' => false, 'err' => 'rate limited'], 429, ['Retry-After: 60']);
     }
