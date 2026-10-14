@@ -352,8 +352,8 @@ function api_config(array $client, array $key, ?array $body): void
     if (strlen(raw_body()) > MAX_CONFIG_BODY) {
         json_err('too large', 413);
     }
-    // Anti gzip-bomb: encoded body max 2 MB.
-    $encLen = strlen((string)file_get_contents('php://input'));
+    // Anti gzip-bomb: encoded body max 2 MB (memoized, no re-read).
+    $encLen = strlen(raw_body_encoded());
     if ($encLen > 2 * 1024 * 1024) {
         json_err('too large', 413);
     }

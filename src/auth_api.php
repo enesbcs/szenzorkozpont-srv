@@ -67,9 +67,10 @@ function api_auth(): array
     }
 
     if (!$key || !$client) {
-        // Incremental backoff: 1s, 2s, 4s … max 30s (+small jitter).
+        // Incremental backoff: 1s, 2s, 4s … max 5s (+small jitter).
+        // Short cap: long sleeps hold FPM workers under flood.
         $n = fail_count($ip, $prefix);
-        $wait = min(30, 1 * (2 ** min($n, 5)));
+        $wait = min(5, 1 * (2 ** min($n, 5)));
         log_fail($ip, $prefix);
         $wait += rand(0, 500) / 1000;
         usleep((int)($wait * 1000000));
@@ -81,7 +82,10 @@ function api_auth(): array
         }
     }
 
-    q('UPDATE api_keys SET last_used_at=? WHERE id=?', [now_ts(), $key['id']]);
+    // Activity stamp throttled: at most one write per 10 min per key.
+    if ((int)($key['last_used_at'] ?? 0) < now_ts() - 600) {
+        q('UPDATE api_keys SET last_used_at=? WHERE id=?', [now_ts(), $key['id']]);
+    }
     return [$client, $key];
 }
 
@@ -125,7 +129,11 @@ function user_token_verify(string $token): ?array
 function rate_limit(string $k, int $max, int $window): void
 {
     $now = now_ts();
-    q('DELETE FROM rate_hits WHERE ts<?', [$now - $window]);
+    // Expired-row purge thinned: queries ignore stale rows anyway,
+    // job_cleanup purges them; ~2% of calls sweep.
+    if (rand(1, 50) === 1) {
+        q('DELETE FROM rate_hits WHERE ts<?', [$now - $window]);
+    }
     $r = q1('SELECT COUNT(*) c FROM rate_hits WHERE k=?', [$k]);
     if (((int)($r['c'] ?? 0)) >= $max) {
         json_out(['ok' => false, 'err' => 'rate limited'], 429, ['Retry-After: 60']);

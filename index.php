@@ -57,12 +57,14 @@ if (($seg[0] ?? '') === 'api') {
     if ((int)($_SERVER['CONTENT_LENGTH'] ?? 0) > 2 * 1024 * 1024) {
         json_out(['ok' => false, 'err' => 'too large'], 413);
     }
+    // Auth before body parse: key is header-only, so bad keys fail
+    // without JSON decode + handler dispatch cost.
+    $r = implode('/', array_slice($seg, 1));
+    [$client, $key] = api_auth();
     $body = json_body();
     if ($body === null) {
         json_err('bad json');
     }
-    $r = implode('/', array_slice($seg, 1));
-    [$client, $key] = api_auth();
     switch ($r) {
         case 'v1/commands/pull':
             api_pull($client, $key, $body);

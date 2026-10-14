@@ -30,21 +30,63 @@ function json_err(string $msg, int $code = 400): void
     json_out(['ok' => false, 'err' => $msg], $code);
 }
 
+/** Decoded request body cap: covers MAX_CONFIG_BODY (512 KiB) + headroom. */
+const DECODED_MAX = 1048576;
+
+/** [encoded, decoded] request body pair, read once. Oversize decoded exits 413. */
+function raw_body_pair(): array
+{
+    static $pair = null;
+    if ($pair !== null) {
+        return $pair;
+    }
+    $raw = (string)file_get_contents('php://input');
+    $dec = $raw;
+    $enc = $_SERVER['HTTP_CONTENT_ENCODING'] ?? '';
+    if (stripos($enc, 'gzip') !== false && $raw !== '') {
+        // Incremental inflate: output bounded, no full-bomb allocation.
+        $ctx = function_exists('inflate_init') ? @inflate_init(ZLIB_ENCODING_GZIP) : false;
+        if ($ctx !== false) {
+            $dec = '';
+            $off = 0;
+            $len = strlen($raw);
+            $ok = true;
+            while ($off < $len) {
+                $chunk = substr($raw, $off, 65536);
+                $off += 65536;
+                $part = ($off >= $len)
+                    ? @inflate_add($ctx, $chunk, ZLIB_FINISH)
+                    : @inflate_add($ctx, $chunk, ZLIB_NO_FLUSH);
+                if ($part === false) {
+                    $ok = false;
+                    break;
+                }
+                $dec .= $part;
+                if (strlen($dec) > DECODED_MAX) {
+                    json_err('too large', 413);
+                }
+            }
+            if (!$ok) {
+                $dec = $raw; // corrupt gzip: plain path fails as bad json
+            }
+        }
+    }
+    if (strlen($dec) > DECODED_MAX) {
+        json_err('too large', 413);
+    }
+    return $pair = [$raw, $dec];
+}
+
 /** Raw request body, gunzipped if gzipped. */
 function raw_body(): string
 {
-    $raw = file_get_contents('php://input');
-    if ($raw === false) {
-        return '';
-    }
-    $enc = $_SERVER['HTTP_CONTENT_ENCODING'] ?? '';
-    if (stripos($enc, 'gzip') !== false && $raw !== '') {
-        $dec = @gzdecode($raw);
-        if ($dec !== false) {
-            return $dec;
-        }
-    }
-    return $raw;
+    return raw_body_pair()[1];
+}
+
+/** Raw request body as received (still gzipped if gzipped). */
+function raw_body_encoded(): string
+{
+    return raw_body_pair()[0];
 }
 
 /** Decode JSON body to assoc array; null on error. */
